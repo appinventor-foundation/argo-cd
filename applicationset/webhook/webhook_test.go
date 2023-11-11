@@ -94,6 +94,15 @@ func TestWebhookHandler(t *testing.T) {
 			expectedRefresh:    false,
 		},
 		{
+			desc:               "WebHook from a GitHub repository event",
+			headerKey:          "X-GitHub-Event",
+			headerValue:        "repository",
+			payloadFile:        "github-repository-event.json",
+			effectedAppSets:    []string{"scm-git-github", "plugin", "matrix-pull-request-github-plugin"},
+			expectedStatusCode: http.StatusOK,
+			expectedRefresh:    true,
+		},
+		{
 			desc:               "WebHook from a GitLab repository via Commit",
 			headerKey:          "X-Gitlab-Event",
 			headerValue:        "Push Hook",
@@ -179,7 +188,7 @@ func TestWebhookHandler(t *testing.T) {
 			headerKey:          "X-Vss-Activityid",
 			headerValue:        "Push Hook",
 			payloadFile:        "azuredevops-push.json",
-			effectedAppSets:    []string{"git-azure-devops", "plugin", "matrix-pull-request-github-plugin"},
+			effectedAppSets:    []string{"git-azure-devops", "plugin", "matrix-pull-request-github-plugin", "scm-git-azure-devops"},
 			expectedStatusCode: http.StatusOK,
 			expectedRefresh:    true,
 		},
@@ -230,6 +239,8 @@ func TestWebhookHandler(t *testing.T) {
 				fakeAppWithGitlabPullRequestGenerator("pull-request-gitlab-path", namespace, "group/name"),
 				fakeAppWithGitlabPullRequestGenerator("pull-request-gitlab-path-case", namespace, "Group/Name"),
 				fakeAppWithGitlabPullRequestGenerator("pull-request-gitlab-path-nomatch", namespace, "group/other"),
+				fakeAppWithGithubSCMGenerator("scm-git-github", namespace, "Codertocat"),
+				fakeAppWithAzureDevOpsSCMGenerator("scm-git-azure-devops", namespace, "Fabrikam"),
 				fakeAppWithAzureDevOpsPullRequestGenerator("pull-request-azure-devops", namespace, "DefaultCollection", "Fabrikam"),
 				fakeAppWithPluginGenerator("plugin", namespace),
 				fakeAppWithOciGenerator("oci-ghcr", namespace, "oci://ghcr.io/org/image", "1.0.0"),
@@ -454,6 +465,44 @@ func fakeAppWithGithubPullRequestGenerator(name, namespace, owner, repo string) 
 						Github: &v1alpha1.PullRequestGeneratorGithub{
 							Owner: owner,
 							Repo:  repo,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func fakeAppWithGithubSCMGenerator(name, namespace, owner string) *v1alpha1.ApplicationSet {
+	return &v1alpha1.ApplicationSet{
+		Name:      name,
+		Namespace: namespace,
+		Spec: v1alpha1.ApplicationSetSpec{
+			Generators: []v1alpha1.ApplicationSetGenerator{
+				{
+					SCMProvider: &v1alpha1.SCMProviderGenerator{
+						CloneProtocol: "https",
+						Github: &v1alpha1.SCMProviderGeneratorGithub{
+							Organization: owner,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func fakeAppWithAzureDevOpsSCMGenerator(name, namespace, owner string) *v1alpha1.ApplicationSet {
+	return &v1alpha1.ApplicationSet{
+		Name:      name,
+		Namespace: namespace,
+		Spec: v1alpha1.ApplicationSetSpec{
+			Generators: []v1alpha1.ApplicationSetGenerator{
+				{
+					SCMProvider: &v1alpha1.SCMProviderGenerator{
+						CloneProtocol: "https",
+						AzureDevOps: &v1alpha1.SCMProviderGeneratorAzureDevOps{
+							Organization: owner,
 						},
 					},
 				},
