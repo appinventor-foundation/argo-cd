@@ -338,6 +338,10 @@ func getOciGeneratorInfo(payload any) *ociGeneratorInfo {
 func getSCMGeneratorInfo(payload any) *scmGeneratorInfo {
 	var info scmGeneratorInfo
 	switch payload := payload.(type) {
+	case github.PushPayload:
+		info.Github = &scmGeneratorGitHubInfo{
+			Repo: payload.Repository.Name,
+		}
 	case github.RepositoryPayload:
 		info.Github = &scmGeneratorGitHubInfo{
 			Repo: payload.Repository.Name,
