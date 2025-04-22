@@ -314,6 +314,10 @@ func getPRGeneratorInfo(payload interface{}) *prGeneratorInfo {
 func getSCMGeneratorInfo(payload interface{}) *scmGeneratorInfo {
 	var info scmGeneratorInfo
 	switch payload := payload.(type) {
+	case github.PushPayload:
+		info.Github = &scmGeneratorGitHubInfo{
+			Repo: payload.Repository.Name,
+		}
 	case github.RepositoryPayload:
 		info.Github = &scmGeneratorGitHubInfo{
 			Repo: payload.Repository.Name,
