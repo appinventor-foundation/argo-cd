@@ -522,6 +522,9 @@ func matchesAnyFilter(filters []v1alpha1.SCMProviderGeneratorFilter, repo string
 		return true
 	}
 	for _, filter := range filters {
+		if filter.RepositoryMatch == nil {
+			return true
+		}
 		repoRegexp, err := regexp.Compile(*filter.RepositoryMatch)
 		if err != nil {
 			log.Errorf("Failed to compile repository regex in SCM generator: %v", err)
