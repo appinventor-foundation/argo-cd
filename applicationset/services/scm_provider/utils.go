@@ -48,6 +48,37 @@ func compileFilters(filters []argoprojiov1alpha1.SCMProviderGeneratorFilter) ([]
 	return outFilters, nil
 }
 
+// MayMatchWebhook checks the repository and branch constraints available in a webhook.
+// Reconciliation checks labels and paths, which require SCM API calls.
+func MayMatchWebhook(filters []argoprojiov1alpha1.SCMProviderGeneratorFilter, repository, branch string) (bool, error) {
+	compiled, err := compileFilters(filters)
+	if err != nil {
+		return false, err
+	}
+
+	// A repository must pass each filter group that the generator would apply.
+	for _, group := range getApplicableFilters(compiled) {
+		if len(group) == 0 {
+			continue
+		}
+		matched := false
+		for _, filter := range group {
+			if filter.RepositoryMatch != nil && !filter.RepositoryMatch.MatchString(repository) {
+				continue
+			}
+			if branch != "" && filter.BranchMatch != nil && !filter.BranchMatch.MatchString(branch) {
+				continue
+			}
+			matched = true
+			break
+		}
+		if !matched {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 func matchFilter(ctx context.Context, provider SCMProviderService, repo *Repository, filter *Filter) (bool, error) {
 	if filter.RepositoryMatch != nil && !filter.RepositoryMatch.MatchString(repo.Repository) {
 		return false, nil

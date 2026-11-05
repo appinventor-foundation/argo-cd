@@ -63,7 +63,7 @@ func TestWebhookHandler(t *testing.T) {
 			headerKey:          "X-GitHub-Event",
 			headerValue:        "push",
 			payloadFile:        "github-commit-event.json",
-			effectedAppSets:    []string{"git-github", "matrix-git-github", "merge-git-github", "matrix-scm-git-github", "matrix-nested-git-github", "merge-nested-git-github", "plugin", "matrix-pull-request-github-plugin"},
+			effectedAppSets:    []string{"git-github", "matrix-git-github", "merge-git-github", "matrix-scm-git-github", "matrix-nested-git-github", "merge-nested-git-github", "plugin", "matrix-pull-request-github-plugin", "scm-github-master"},
 			expectedStatusCode: http.StatusOK,
 			expectedRefresh:    true,
 		},
@@ -81,7 +81,7 @@ func TestWebhookHandler(t *testing.T) {
 			headerKey:          "X-GitHub-Event",
 			headerValue:        "push",
 			payloadFile:        "github-commit-branch-event.json",
-			effectedAppSets:    []string{"git-github", "plugin", "matrix-pull-request-github-plugin"},
+			effectedAppSets:    []string{"git-github", "plugin", "matrix-pull-request-github-plugin", "scm-github-master"},
 			expectedStatusCode: http.StatusOK,
 			expectedRefresh:    true,
 		},
@@ -206,6 +206,12 @@ func TestWebhookHandler(t *testing.T) {
 
 	for _, test := range tt {
 		t.Run(test.desc, func(t *testing.T) {
+			repositoryMatch, branchMatch := "^repo$", "^master$"
+			scmApp := fakeAppWithGithubSCMGenerator("scm-github-master", namespace, "org")
+			scmApp.Spec.Generators[0].SCMProvider.Filters = []v1alpha1.SCMProviderGeneratorFilter{
+				{RepositoryMatch: &repositoryMatch},
+				{BranchMatch: &branchMatch},
+			}
 			fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 				fakeAppWithGitGenerator("git-github", namespace, "https://github.com/org/repo"),
 				fakeAppWithGitGenerator("git-github-copy", namespace, "https://github.com/org/repo-copy"),
@@ -215,6 +221,7 @@ func TestWebhookHandler(t *testing.T) {
 				fakeAppWithGithubPullRequestGenerator("pull-request-github", namespace, "CodErTOcat", "Hello-World"),
 				fakeAppWithGitlabPullRequestGenerator("pull-request-gitlab", namespace, "100500"),
 				fakeAppWithGithubSCMGenerator("scm-git-github", namespace, "Codertocat"),
+				scmApp,
 				fakeAppWithAzureDevOpsSCMGenerator("scm-git-azure-devops", namespace, "Fabrikam"),
 				fakeAppWithAzureDevOpsPullRequestGenerator("pull-request-azure-devops", namespace, "DefaultCollection", "Fabrikam"),
 				fakeAppWithPluginGenerator("plugin", namespace),
@@ -842,4 +849,65 @@ func newFakeClient(ns string) *kubefake.Clientset {
 			"server.secretkey": nil,
 		},
 	})
+}
+
+func TestGitHubSCMWebhookFilters(t *testing.T) {
+	repositoryMatch := "^repo$"
+	branchMatch := "^develop$"
+	filters := []v1alpha1.SCMProviderGeneratorFilter{
+		{RepositoryMatch: &repositoryMatch},
+		{BranchMatch: &branchMatch},
+	}
+	tests := []struct {
+		name    string
+		event   scmGeneratorGitHubInfo
+		filters []v1alpha1.SCMProviderGeneratorFilter
+		want    bool
+	}{
+		{
+			name:    "matching push",
+			event:   scmGeneratorGitHubInfo{Owner: "Org", Repo: "repo", Branch: "develop"},
+			filters: filters,
+			want:    true,
+		},
+		{
+			name:    "different organization",
+			event:   scmGeneratorGitHubInfo{Owner: "other", Repo: "repo", Branch: "develop"},
+			filters: filters,
+			want:    false,
+		},
+		{
+			name:    "different repository",
+			event:   scmGeneratorGitHubInfo{Owner: "org", Repo: "other-repo", Branch: "develop"},
+			filters: filters,
+			want:    false,
+		},
+		{
+			name:    "different branch",
+			event:   scmGeneratorGitHubInfo{Owner: "org", Repo: "repo", Branch: "main"},
+			filters: filters,
+			want:    false,
+		},
+		{
+			name:    "branch-only filter",
+			event:   scmGeneratorGitHubInfo{Owner: "org", Repo: "repo", Branch: "develop"},
+			filters: filters[1:],
+			want:    true,
+		},
+		{
+			name:    "repository event",
+			event:   scmGeneratorGitHubInfo{Owner: "org", Repo: "repo"},
+			filters: filters,
+			want:    true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			generator := &v1alpha1.SCMProviderGenerator{
+				Github:  &v1alpha1.SCMProviderGeneratorGithub{Organization: "org"},
+				Filters: test.filters,
+			}
+			assert.Equal(t, test.want, shouldRefreshSCMGenerator(generator, &scmGeneratorInfo{Github: &test.event}))
+		})
+	}
 }
