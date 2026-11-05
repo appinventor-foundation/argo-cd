@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/argoproj/argo-cd/v3/applicationset/generators"
+	"github.com/argoproj/argo-cd/v3/applicationset/services/scm_provider"
 	"github.com/argoproj/argo-cd/v3/common"
 	"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	argosettings "github.com/argoproj/argo-cd/v3/util/settings"
@@ -85,7 +86,9 @@ type ociGeneratorInfo struct {
 }
 
 type scmGeneratorGitHubInfo struct {
-	Repo string
+	Owner  string
+	Repo   string
+	Branch string
 }
 
 type scmGeneratorAzuredevopsInfo struct {
@@ -339,12 +342,20 @@ func getSCMGeneratorInfo(payload any) *scmGeneratorInfo {
 	var info scmGeneratorInfo
 	switch payload := payload.(type) {
 	case github.PushPayload:
+		if !strings.HasPrefix(payload.Ref, "refs/heads/") {
+			return nil
+		}
+		owner, _, _ := strings.Cut(payload.Repository.FullName, "/")
 		info.Github = &scmGeneratorGitHubInfo{
-			Repo: payload.Repository.Name,
+			Owner:  owner,
+			Repo:   payload.Repository.Name,
+			Branch: webhook.ParseRevision(payload.Ref),
 		}
 	case github.RepositoryPayload:
+		owner, _, _ := strings.Cut(payload.Repository.FullName, "/")
 		info.Github = &scmGeneratorGitHubInfo{
-			Repo: payload.Repository.Name,
+			Owner: owner,
+			Repo:  payload.Repository.Name,
 		}
 	case azuredevops.GitPushEvent:
 		info.Azuredevops = &scmGeneratorAzuredevopsInfo{
@@ -507,7 +518,14 @@ func shouldRefreshSCMGenerator(gen *v1alpha1.SCMProviderGenerator, info *scmGene
 	}
 
 	if gen.Github != nil && info.Github != nil {
-		return matchesAnyFilter(gen.Filters, info.Github.Repo)
+		if !strings.EqualFold(gen.Github.Organization, info.Github.Owner) {
+			return false
+		}
+		matches, err := scm_provider.MayMatchWebhook(gen.Filters, info.Github.Repo, info.Github.Branch)
+		if err != nil {
+			log.WithError(err).Error("Failed to compile SCM generator filters")
+		}
+		return matches
 	}
 
 	if gen.AzureDevOps != nil && info.Azuredevops != nil {
